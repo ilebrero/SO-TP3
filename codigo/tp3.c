@@ -39,16 +39,16 @@ void cliente(int mi_serv_rank, t_params params)
     
     while(params.cant_iteraciones-- > 0) {
 
-//        debug("\tComputando de todo un poco ...");
+        debug("\tComputando de todo un poco ...");
         computar(params.mseg_computo_previo);
 
-//        debug("\t¡Necesito mutex!");
+        debug("\t¡Necesito mutex!");
         MPI_Send(NULL, 0, MPI_INT, mi_serv_rank, TAG_PEDIDO, COMM_WORLD);
 
         //debug("\tEsperando respuesta de mi servidor");
         MPI_Recv(NULL, 0, MPI_INT, mi_serv_rank, TAG_OTORGADO, COMM_WORLD, &status);
 
-//        debug("\tEntrando en sección crítica");
+        debug("\tEntrando en sección crítica");
         for(i = 0; i < cant_ops; ++i) {
 
             /* `Ejecutamos' una instrucción crítica. */
@@ -73,7 +73,7 @@ void cliente(int mi_serv_rank, t_params params)
         MPI_Send(NULL, 0, MPI_INT, mi_serv_rank, TAG_LIBERO, COMM_WORLD);
     }
 
-//    debug("\tAvisandole a mi servidor que voy a terminar");
+    debug("\tAvisandole a mi servidor que voy a terminar");
     MPI_Ssend(NULL, 0, MPI_INT, mi_serv_rank, TAG_TERMINE, COMM_WORLD);
 }
 
@@ -218,7 +218,7 @@ int main(int argc, char *argv[])
         cliente(mi_rank - 1, recibir_parametros());
     }
 
-    //debug("Finalizando");
+    debug("Finalizando");
     MPI_Finalize();
     return 0;
 }
