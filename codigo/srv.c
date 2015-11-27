@@ -28,105 +28,108 @@ void servidor(int mi_cliente)
 
 
     while( ! listo_para_salir ) {
-        
         MPI_Recv(&pedido, 1, MPI_INT, ANY_SOURCE, ANY_TAG, COMM_WORLD, &status);
         origen = status.MPI_SOURCE;
         tag = status.MPI_TAG;
 
-        if (tag == TAG_PEDIDO) {
-          assert(origen == mi_cliente);
-          assert(hay_pedido_local == FALSE);
-          hay_pedido_local = TRUE;
-            
-          if (cantidad_servidores == 1) { //caso particular en el que hay un sólo servidor (no tengo que esperar respuesta de otros)
-            MPI_Send(NULL, 0, MPI_INT, mi_cliente, TAG_OTORGADO, COMM_WORLD);
-          } else {
+        switch (tag) {
+          case(TAG_PEDIDO):
+            assert(origen == mi_cliente);
+            assert(hay_pedido_local == FALSE);
+            hay_pedido_local = TRUE;
+              
+            if (cantidad_servidores == 1) { //caso particular en el que hay un sólo servidor (no tengo que esperar respuesta de otros)
+              MPI_Send(NULL, 0, MPI_INT, mi_cliente, TAG_OTORGADO, COMM_WORLD);
+            } else {
 
-            highest_sequence_number++; //aumento el número de orden del pedido 
-            mi_pedido = highest_sequence_number; //es el número de orden del actual
-           
-            for (i = 0 ; i < cant_ranks; i+=2) { //pido acceso exclusivo a todos los servidores
+              highest_sequence_number++; //aumento el número de orden del pedido 
+              mi_pedido = highest_sequence_number; //es el número de orden del actual
+             
+              for (i = 0 ; i < cant_ranks; i+=2) { //pido acceso exclusivo a todos los servidores
 
-              if (i != mi_cliente-1 && (veo_gente_muerta[i] == FALSE)) //si no soy yo mismo y el servidor no terminó
-                MPI_Send(&mi_pedido, 1, MPI_INT, i, TAG_REQUEST, COMM_WORLD);
-            }
-          }
-        }
-
-        else if (tag == TAG_REPLY) {
-          replies[origen] = TRUE; //seteo en el vector de replies TRUE ya que "origen" es el servidor que respondió
-          char contestaron_todos = TRUE;
-          for (i = 0 ; i < cant_ranks ; i+=2){ //chequeo que todos los servidores activos me hayan contestado
-           
-            if ((veo_gente_muerta[i] == FALSE) && (replies[i] == FALSE)) //si alguno no contesto, retorno FALSE
-              contestaron_todos = FALSE;
-          }
-          if (contestaron_todos) { //si todos los servidores contestaron
-            MPI_Send(NULL, 0, MPI_INT, mi_cliente, TAG_OTORGADO, COMM_WORLD); //le aviso al cliente que ya puede acceder
-            for (i = 0 ; i < cant_ranks ; i+=2){ //restauro vector replies
-              replies[i] = FALSE;
-            }
-            replies[mi_cliente-1] = TRUE;
-          }
-        }
-
-        else if (tag == TAG_LIBERO) {
-          assert(origen == mi_cliente);
-          assert(hay_pedido_local == TRUE);
-          hay_pedido_local = FALSE;
-
-          for (i = 0 ; i < cant_ranks ; i+=2) { //mando REPLY a todos los servidores que había aplazado por tener menor prioridad
-            if (request_aplazados[i] && (veo_gente_muerta[i] == FALSE)) {
-
-              MPI_Send(NULL, 0, MPI_INT, i, TAG_REPLY , COMM_WORLD);
-              request_aplazados[i] = FALSE; //restauro request_aplazados
-            }
-          }
-        }
-
-        else if (tag == TAG_REQUEST) {
-          if (highest_sequence_number < pedido) 
-            highest_sequence_number = pedido; //actualizo mayor número de orden según el valor del pedido entrante
-
-          if (hay_pedido_local) {
-          
-            if (mi_pedido < pedido) { //tengo prioridad
-              request_aplazados[origen] = TRUE;              
-            } 
-           
-            if (mi_pedido == pedido) {
-              if (origen < mi_cliente) { //defino prioridad segúm mayor id de servidor
-                request_aplazados[origen] = TRUE;
-              } else { //tiene prioridad el pedido entrante  
-                MPI_Send(NULL, 0, MPI_INT, origen, TAG_REPLY , COMM_WORLD);
+                if (i != mi_cliente-1 && (veo_gente_muerta[i] == FALSE)) //si no soy yo mismo y el servidor no terminó
+                  MPI_Send(&mi_pedido, 1, MPI_INT, i, TAG_REQUEST, COMM_WORLD);
               }
             }
+          break;
+
+          case(TAG_REPLY): 
+            replies[origen] = TRUE; //seteo en el vector de replies TRUE ya que "origen" es el servidor que respondió
+            char contestaron_todos = TRUE;
+            for (i = 0 ; i < cant_ranks ; i+=2){ //chequeo que todos los servidores activos me hayan contestado
+             
+              if ((veo_gente_muerta[i] == FALSE) && (replies[i] == FALSE)){ //si alguno no contesto, retorno FALSE
+                contestaron_todos = FALSE;
+              }
+
+            }
+            if (contestaron_todos) { //si todos los servidores contestaron
+              
+              for (i = 0 ; i < cant_ranks ; i+=2){ //restauro vector replies
+                replies[i] = FALSE;
+              }
+
+              replies[mi_cliente-1] = TRUE;
+              MPI_Send(NULL, 0, MPI_INT, mi_cliente, TAG_OTORGADO, COMM_WORLD); //le aviso al cliente que ya puede acceder
+            }
+          break;
+
+          case(TAG_LIBERO):
+            assert(origen == mi_cliente);
+            assert(hay_pedido_local == TRUE);
+            hay_pedido_local = FALSE;
+
+            for (i = 0 ; i < cant_ranks ; i+=2) { //mando REPLY a todos los servidores que había aplazado por tener menor prioridad
+              if ((veo_gente_muerta[i] == FALSE) && request_aplazados[i]) {
+                MPI_Send(NULL, 0, MPI_INT, i, TAG_REPLY , COMM_WORLD);
+                request_aplazados[i] = FALSE; //restauro request_aplazados
+              }
+            }
+          break;
+
+          case(TAG_REQUEST):
+            if (highest_sequence_number < pedido) 
+              highest_sequence_number = pedido; //actualizo mayor número de orden según el valor del pedido entrante
+
+            if (hay_pedido_local) {
+              if (mi_pedido < pedido) { //tengo prioridad
+                request_aplazados[origen] = TRUE;
+              } 
+             
+              if (mi_pedido == pedido) {
+                if (origen < mi_cliente) { //defino prioridad segúm mayor id de servidor
+                  request_aplazados[origen] = TRUE;
+                } else { //tiene prioridad el pedido entrante  
+                  MPI_Send(NULL, 0, MPI_INT, origen, TAG_REPLY , COMM_WORLD);
+                }
+              }
+             
+              if (mi_pedido > pedido) { //tiene prioridad el pedido entrante 
+                MPI_Send(NULL, 0, MPI_INT, origen, TAG_REPLY , COMM_WORLD);                
+              }
+              // NO DEBERIA HABER ACA ALGO ONDA, che cliente se que estas haciendo algo pero 
+              // al final lo va a hacer otro, asi que quedate pillo un rato mas
            
-            if (mi_pedido > pedido) //tiene prioridad el pedido entrante 
-              MPI_Send(NULL, 0, MPI_INT, origen, TAG_REPLY , COMM_WORLD);
-         
-          } else { //tiene prioridad el pedido entrante 
-              MPI_Send(NULL, 0, MPI_INT, origen, TAG_REPLY , COMM_WORLD);
-          }
-        }
-        
-        else if (tag == TAG_TERMINE) { 
-          assert(origen == mi_cliente);
-          listo_para_salir = TRUE;
-          for (i = 0 ; i < cant_ranks ; i+=2) { //le aviso a todos los servidores activos que voy a terminar
-            if (veo_gente_muerta[i] == FALSE)
-              MPI_Send(NULL, 0, MPI_INT, i, TAG_MORI , COMM_WORLD);
-          }
-  
-        }
+            } else { //tiene prioridad el pedido entrante 
+                MPI_Send(NULL, 0, MPI_INT, origen, TAG_REPLY , COMM_WORLD);
+            }
+          break;
+          
+          case(TAG_TERMINE):
+            assert(origen == mi_cliente);
+            listo_para_salir = TRUE;
+            for (i = 0 ; i < cant_ranks ; i += 2) { //le aviso a todos los servidores activos que voy a terminar
+              if (i != mi_rank && veo_gente_muerta[i] == FALSE) {
+                MPI_Send(NULL, 0, MPI_INT, i, TAG_MORI , COMM_WORLD);
+              }
+            }
+          break;
 
-        else if (tag == TAG_MORI) { //un servidor avisa que terminó
-          cantidad_servidores--; //decremento cantidad de servidores
-          veo_gente_muerta[origen] = TRUE; //asigno al difunto en su respectiva posición TRUE
-          veo_gente_muerta[origen+1] = TRUE;//asigno al cliente difunto en su respectiva posición TRUE
+          case(TAG_MORI)://un servidor avisa que terminó
+            cantidad_servidores--; //decremento cantidad de servidores
+            veo_gente_muerta[origen] = TRUE; //asigno al difunto en su respectiva posición TRUE
+            veo_gente_muerta[origen+1] = TRUE;//asigno al cliente difunto en su respectiva posición TRUE
+          break;
         }
-        
     }
-    
 }
-
